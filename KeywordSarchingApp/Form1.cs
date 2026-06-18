@@ -11,99 +11,21 @@ namespace KeywordSarchingApp
 {
     public partial class Form1 : Form
     {
-        // CRITICAL FIX: Keeping a global connection active keeps the In-Memory DB from vanishing!
-        private string inMemoryDbConnection = "Data Source=:memory:;Version=3;New=True;Internal Connection=True;";
-        private SQLiteConnection memConn;
+        // 1. Direct connection link pointing to your 436 MB offline relational WordNet database
+        private string wordNetDbConnection = "Data Source=wordnet.db;Version=3;";
 
         public Form1()
         {
             InitializeComponent();
 
+            // Automatically select the first option (Exact Word) when the form loads
             if (cmbSearchOptions.Items.Count > 0)
             {
                 cmbSearchOptions.SelectedIndex = 0;
             }
-
-            // Fire up and permanently lock the in-memory graph database channel
-            InitializeInMemoryThesaurus();
         }
 
-        private void InitializeInMemoryThesaurus()
-        {
-            try
-            {
-                // Instantiate the global master connection object
-                memConn = new SQLiteConnection(inMemoryDbConnection);
-                memConn.Open();
-
-                string createTableQuery = @"
-                    CREATE TABLE synonym_map (
-                        keyword TEXT NOT NULL,
-                        synonym TEXT NOT NULL
-                    );
-                    CREATE INDEX idx_keyword ON synonym_map(keyword);
-                    CREATE INDEX idx_synonym ON synonym_map(synonym);";
-
-                using (SQLiteCommand cmd = new SQLiteCommand(createTableQuery, memConn))
-                {
-                    cmd.ExecuteNonQuery();
-                }
-
-                string jsonlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "en_thesaurus.jsonl");
-                if (File.Exists(jsonlPath))
-                {
-                    // Use the global live connection within a high-speed database transaction block
-                    using (var transaction = memConn.BeginTransaction())
-                    {
-                        string line;
-                        string insertSql = "INSERT INTO synonym_map (keyword, synonym) VALUES (@kw, @syn)";
-
-                        using (SQLiteCommand insCmd = new SQLiteCommand(insertSql, memConn))
-                        {
-                            insCmd.Parameters.Add("@kw", System.Data.DbType.String);
-                            insCmd.Parameters.Add("@syn", System.Data.DbType.String);
-
-                            using (StreamReader sr = new StreamReader(jsonlPath))
-                            {
-                                while ((line = sr.ReadLine()) != null)
-                                {
-                                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                                    using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(line))
-                                    {
-                                        System.Text.Json.JsonElement root = doc.RootElement;
-                                        string mainWord = root.GetProperty("word").GetString().ToLower().Trim();
-                                        System.Text.Json.JsonElement synonymsArray = root.GetProperty("synonyms");
-
-                                        foreach (System.Text.Json.JsonElement elem in synonymsArray.EnumerateArray())
-                                        {
-                                            string synWord = elem.GetString().ToLower().Trim();
-
-                                            if (!string.IsNullOrEmpty(synWord) && !synWord.Contains(" ") && !synWord.Contains("-") && !mainWord.Contains(" ") && !mainWord.Contains("-"))
-                                            {
-                                                insCmd.Parameters["@kw"].Value = mainWord;
-                                                insCmd.Parameters["@syn"].Value = synWord;
-                                                insCmd.ExecuteNonQuery();
-
-                                                insCmd.Parameters["@kw"].Value = synWord;
-                                                insCmd.Parameters["@syn"].Value = mainWord;
-                                                insCmd.ExecuteNonQuery();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        transaction.Commit();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Failed to index synonym structures: " + ex.Message, "Index Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }
-
+        // 2. Browse button logic (To pick a CSV or Text file)
         private void btnBrowse_Click_1(object sender, EventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog();
@@ -115,6 +37,7 @@ namespace KeywordSarchingApp
             }
         }
 
+        // 3. Load button logic (To display the file content inside the RichTextBox)
         private void btnLoad_Click_1(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(txtFilePath.Text) || !File.Exists(txtFilePath.Text))
@@ -127,39 +50,55 @@ namespace KeywordSarchingApp
             lblStatus.Text = "Search Status: File successfully loaded.";
         }
 
+        // 4. Highly optimized relational database query for Princeton WordNet
         private List<string> GetSynonymsFromDb(string word)
         {
             List<string> synonyms = new List<string> { word.Trim().ToLower() };
 
-            if (memConn == null || memConn.State != System.Data.ConnectionState.Open)
-                return synonyms;
-
-            // CRITICAL FIX: Query using the active global memory instance directly
-            string query = "SELECT DISTINCT synonym FROM synonym_map WHERE keyword = @word";
+            // Maps user input through WordNet's linked concept directory tables
+            string query = @"
+                SELECT DISTINCT w2.lemma 
+                FROM words w1
+                JOIN senses s1 ON w1.wordid = s1.wordid
+                JOIN senses s2 ON s1.synsetid = s2.synsetid
+                JOIN words w2 ON s2.wordid = w2.wordid
+                WHERE w1.lemma = @word AND w2.lemma != @word;";
 
             try
             {
-                using (SQLiteCommand cmd = new SQLiteCommand(query, memConn))
+                using (SQLiteConnection conn = new SQLiteConnection(wordNetDbConnection))
                 {
-                    cmd.Parameters.AddWithValue("@word", word.Trim().ToLower());
-                    using (SQLiteDataReader reader = cmd.ExecuteReader())
+                    conn.Open();
+                    using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
                     {
-                        while (reader.Read())
+                        cmd.Parameters.AddWithValue("@word", word.Trim().ToLower());
+
+                        using (SQLiteDataReader reader = cmd.ExecuteReader())
                         {
-                            string syn = reader["synonym"].ToString().Trim().ToLower();
-                            if (!synonyms.Contains(syn)) synonyms.Add(syn);
+                            while (reader.Read())
+                            {
+                                string syn = reader["lemma"].ToString().Trim().ToLower();
+
+                                // WordNet stores phrases using underscores (e.g., clever_boy). 
+                                // strip underscores/hyphens to ensure only single standalone words are matched.
+                                if (!string.IsNullOrEmpty(syn) && !syn.Contains(" ") && !syn.Contains("_") && !syn.Contains("-"))
+                                {
+                                    if (!synonyms.Contains(syn)) synonyms.Add(syn);
+                                }
+                            }
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Read Error: " + ex.Message);
+                MessageBox.Show("WordNet Synset Query Error: " + ex.Message, "Database Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
             return synonyms;
         }
 
+        // 5. Fetch Homonyms using your structured local text file mapping
         private List<string> GetHomonymsFromDb(string word)
         {
             List<string> homonyms = new List<string> { word.Trim().ToLower() };
@@ -198,6 +137,7 @@ namespace KeywordSarchingApp
             return homonyms;
         }
 
+        // 6. Main Search button logic processing execution blocks cleanly
         private void btnSearch_Click(object sender, EventArgs e)
         {
             string keyword = txtSearchKeyword.Text.Trim();
@@ -209,8 +149,10 @@ namespace KeywordSarchingApp
                 return;
             }
 
+            // Normalise selection string to absolute lowercase to prevent comparison failures
             string selectedOption = cmbSearchOptions.SelectedItem.ToString().Trim().ToLower();
 
+            // Clear previous user background selections and clean the results DataGridView
             richTextBoxInput.SelectAll();
             richTextBoxInput.SelectionBackColor = richTextBoxInput.BackColor;
             dgvResults.Rows.Clear();
@@ -236,28 +178,29 @@ namespace KeywordSarchingApp
             else if (selectedOption.Contains("synonym"))
             {
                 List<string> synonymList = GetSynonymsFromDb(keyword);
-                // 🚨 SEARCH LOGGER POPUP: See exactly what the live in-memory table sends back!
+
+                // 🚨 SEARCH LOGGER POPUP: Displays what the WordNet database pulled
                 string testLog = string.Join(", ", synonymList);
-                MessageBox.Show($"Search Term: '{keyword}'\nWords fetched from persistent RAM table: [{testLog}]",
-                                "Live Engine Log", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Search Term: '{keyword}'\nWords fetched from offline WordNet: [{testLog}]",
+                                "WordNet Log", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 string combinedWords = string.Join("|", synonymList.Where(s => !string.IsNullOrEmpty(s)).Select(Regex.Escape));
                 searchPattern = !string.IsNullOrEmpty(combinedWords) ? @"\b(" + combinedWords + @")\b" : @"\b" + Regex.Escape(keyword) + @"\b";
             }
             else if (selectedOption.Contains("homonym"))
             {
-                // Fixed: Restored <string> type marker to prevent compile crashes
                 List<string> homonymList = GetHomonymsFromDb(keyword);
                 string combinedWords = string.Join("|", homonymList.Where(h => !string.IsNullOrEmpty(h)).Select(Regex.Escape));
                 searchPattern = !string.IsNullOrEmpty(combinedWords) ? @"\b(" + combinedWords + @")\b" : @"\b" + Regex.Escape(keyword) + @"\b";
             }
 
+            // Fallback safety layer to handle empty bracket errors safely
             if (string.IsNullOrWhiteSpace(searchPattern) || searchPattern == @"\b()\b")
             {
                 searchPattern = @"\b" + Regex.Escape(keyword) + @"\b";
             }
 
-            // Grid Generation Loop
+            // 7. Grid Generation Loop
             for (int i = 0; i < lines.Length; i++)
             {
                 string currentLine = lines[i].Trim();
@@ -270,7 +213,7 @@ namespace KeywordSarchingApp
                 }
             }
 
-            // Stable Paint Highlighting Loop
+            // 8. Stable Paint Highlighting Loop
             if (matchCount > 0)
             {
                 MatchCollection matches = Regex.Matches(fullText, searchPattern, RegexOptions.IgnoreCase);
@@ -291,18 +234,97 @@ namespace KeywordSarchingApp
                 : "Search Status: No matches found.";
         }
 
-        protected override void OnFormClosing(FormClosingEventArgs e)
+        // 9. Clear button logic to completely reset the search keyword and drop down
+        private void btnClear_Click(object sender, EventArgs e)
         {
-            // Close down the persistent database channel safely when closing the UI window
-            if (memConn != null)
+            txtSearchKeyword.Clear();
+
+            if (cmbSearchOptions.Items.Count > 0)
             {
-                if (memConn.State == System.Data.ConnectionState.Open) memConn.Close();
-                memConn.Dispose();
+                cmbSearchOptions.SelectedIndex = 0;
             }
-            base.OnFormClosing(e);
+
+            lblStatus.Text = "Search Status: Search parameters reset.";
+        }
+
+
+        // 10. Export button logic to save the filtered DataGridView rows to a CSV file
+        private void btnExport_Click(object sender, EventArgs e)
+        {
+            if (dgvResults.Rows.Count == 0)
+            {
+                MessageBox.Show("There are no search results to export!", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Filter = "CSV Files (*.csv)|*.csv|Text Files (*.txt)|*.txt";
+            saveFileDialog.Title = "Export Search Results";
+            saveFileDialog.FileName = "Search_Results.csv";
+
+            if (saveFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    using (StreamWriter sw = new StreamWriter(saveFileDialog.FileName))
+                    {
+                        // Set standard CSV tabular header metrics
+                        sw.WriteLine("Line Number,Matched Sentence");
+
+                        foreach (DataGridViewRow row in dgvResults.Rows)
+                        {
+                            if (row.IsNewRow) continue;
+
+                            // Explicitly map cell coordinates to grab keys flawlessly
+                            string lineNum = row.Cells[0].Value?.ToString() ?? "";
+                            string sentence = row.Cells[1].Value?.ToString() ?? "";
+
+                            // Fixed: Correctly escape literal double quotes for standard compilation rules
+                            if (sentence.Contains(","))
+                            {
+                                sentence = "\"" + sentence.Replace("\"", "\"\"") + "\"";
+                            }
+
+                            sw.WriteLine($"{lineNum},{sentence}");
+                        }
+                    }
+
+                    MessageBox.Show("Results successfully exported!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Failed to export files: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void btnClearText_Click(object sender, EventArgs e)
+        {
+            richTextBoxInput.Clear();
+            lblStatus.Text = "Search Status: Text area cleared.";
+        }
+
+        private void btnClearAll_Click(object sender, EventArgs e)
+        {
+            
+            richTextBoxInput.Clear();
+            txtSearchKeyword.Clear();
+            txtFilePath.Clear();
+
+            if (cmbSearchOptions.Items.Count > 0)
+            {
+                cmbSearchOptions.SelectedIndex = 0;
+            }
+
+            dgvResults.Rows.Clear();
+
+            lblStatus.Text = "Search Status: Idle. Application fully reset.";
+
+            MessageBox.Show("All fields and results have been successfully cleared!", "Reset Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 
+    // Win32 Message Handle wrapper library extensions to freeze visual control flickering
     public static class RichTextBoxExtensions
     {
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -320,6 +342,4 @@ namespace KeywordSarchingApp
         }
     }
 }
-
-
 
