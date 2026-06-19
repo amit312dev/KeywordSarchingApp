@@ -1,53 +1,49 @@
-# Keyword Searching Application
+# 🔍 Keyword Searching Application
 
-A high-performance, offline **Windows Forms (C#)** desktop utility designed to scan local text/CSV files for keywords. It features semantic and phonetic analysis using industry-standard datasets to execute advanced search modes smoothly without any UI flickering.
+A fast, offline **C# Windows Forms** desktop app to scan text and CSV files for keywords. It features advanced semantic matching, phonetic filters, and zero screen flickering.
 
 ---
 
 ## 🌟 Key Features
 
-*   **Four Advanced Search Modes**:
-    *   `Exact Word`: Matches whole words only using regex boundaries (`\b`).
-    *   `Contains`: Finds substring pattern matches anywhere inside the line text.
-    *   `Synonyms`: Dynamically matches relational concept trees powered by **Princeton WordNet**.
-    *   `Homonyms`: Maps similar-sounding words via custom datasets (`homophones.txt`).
-*   **Scoped Multi-Tier UI Resets**: 
-    *   `Clear Text`: Clears only the paragraph viewer to prevent data loss.
-    *   `Reset Search`: Resets search parameters and keywords back to default configurations.
-    *   `Clear All`: Fully flushes all fields, data arrays, and status banners.
-*   **Excel-Friendly Exporter**: Saves search results directly into clean, comma-separated `.csv` sheets with embedded quote protections.
-*   **Zero UI Flickering**: Implements a native Win32 `WM_SETREDRAW` control override mechanism to freeze paint frames during heavy keyword highlighting loops.
+*   **Four Search Modes**:
+    *   `Exact Word`: Matches whole words only using boundary lines (`\b`).
+    *   `Contains`: Finds substring word combinations anywhere in a sentence.
+    *   `Synonyms`: Uses **Princeton WordNet** to find matching definitions.
+    *   `Homonyms`: Uses a local text list to match sounds-like words (e.g., right/write).
+*   **Smart Clear Buttons (No Accidental Data Loss)**:
+    *   `Clear Text`: Wipes only the paragraph viewer box.
+    *   `Reset Search`: Resets search choices and inputs back to default.
+    *   `Clear All`: Fully flushes all fields, data arrays, and status text.
+*   **Save Results**: Exports search hits into clean Excel-friendly `.csv` sheets.
+*   **Anti-Flicker Layout**: Stays smooth and steady during heavy color highlights.
 
 ---
 
-## 🛠️ Built With
+## ⚙️ How to Setup and Run
 
-*   **Language**: C# (.NET Framework / .NET Core Windows Forms)
-*   **Database Management Engine**: System.Data.SQLite (Direct Relational Engine)
-*   **Lexical Databases**: 
-    *   [Princeton University WordNet Relational Dataset](https://princeton.edu) (436 MB Offline SQLite Matrix)
-    *   Dynamic Homophones Word Mapping Assets (`homophones.txt`)
+Follow these exact steps to run the application on your computer:
 
----
+### Step 1: Clone the Project
+```bash
+git clone https://github.com
+```
 
-## 🚀 How to Setup and Run
+### Step 2: Download the Offline WordNet Database
+1. Open this link: [WordNetSQL SourceForge Repository Page](http://sourceforge.net)
+2. Download the compressed file named **`sqlite-31.db.zip`** (approx. 15MB).
+3. Unzip the file on your computer to get the **`sqlite-31.db`** file (approx. 436MB).
+4. Copy `sqlite-31.db`, paste it inside your project's output folder at **`bin/Debug/`**, and rename it to exactly: **`wordnet.db`**.
 
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com
-    ```
-2.  **Add Database and Configuration Files**:
-    *   Extract your downloaded Princeton WordNet SQLite database file, rename it to exactly `wordnet.db`, and drop it directly into your application output folder: `bin/Debug/`.
-    *   Place your formatted `homophones.txt` file into the same `bin/Debug/` directory.
-3.  **Open and Rebuild**:
-    *   Launch the solution file (`.sln`) inside Visual Studio.
-    *   Press `Ctrl + Shift + B` to restore package dependencies (`System.Data.SQLite`) and compile the software workspace safely.
-4.  **Launch the App**:
-    *   Click the **Start/Debug** play button to open the dashboard workspace interface!
+### Step 3: Verify Asset Configurations
+*   Make sure your **`homophones.txt`** asset file is also sitting inside that same **`bin/Debug/`** output folder.
+
+### Step 4: Open and Launch
+1. Open the main solution file (`.sln`) inside **Visual Studio**.
+2. Press **`Ctrl + Shift + B`** on your keyboard to restore dependencies (`System.Data.SQLite`) and compile the software.
+3. Click the green **Start / Debug** play button to open your application!
 
 ---
 
-## 📊 Application Visual Architecture
-
-*   **Offline First**: Zero web-service or API dependencies. Fully functional on remote systems or air-gapped computers.
-*   **Hybrid Memory Management**: Swaps heavy runtime JSON line looping for microsecond indexed database `JOIN` queries.
+## 🛡️ Git Protection Note
+The massive 436MB `wordnet.db` file is safely blocked inside the `.gitignore` file. It will never upload to GitHub, protecting your cloud synchronization bounds from size limits.
