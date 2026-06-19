@@ -6,12 +6,13 @@ using System.Text.RegularExpressions;
 using System.Data.SQLite;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks; // Required for async Task operations
 
 namespace KeywordSarchingApp
 {
     public partial class Form1 : Form
     {
-        // 1. Direct connection link pointing to your 436 MB offline relational WordNet database
+        // Direct connection link pointing to offline relational WordNet database
         private string wordNetDbConnection = "Data Source=wordnet.db;Version=3;";
 
         public Form1()
@@ -25,7 +26,7 @@ namespace KeywordSarchingApp
             }
         }
 
-        // 2. Browse button logic (To pick a CSV or Text file)
+        // Browse button logic (To pick a CSV or Text file)
         private void btnBrowse_Click_1(object sender, EventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog();
@@ -37,8 +38,8 @@ namespace KeywordSarchingApp
             }
         }
 
-        // 3. Load button logic (To display the file content inside the RichTextBox)
-        private void btnLoad_Click_1(object sender, EventArgs e)
+        // FIXED: Changed to 'async void' to enable non-blocking background file reading loops
+        private async void btnLoad_Click_1(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(txtFilePath.Text) || !File.Exists(txtFilePath.Text))
             {
@@ -46,16 +47,31 @@ namespace KeywordSarchingApp
                 return;
             }
 
-            richTextBoxInput.Text = File.ReadAllText(txtFilePath.Text);
-            lblStatus.Text = "Search Status: File successfully loaded.";
+            lblStatus.Text = "Search Status: Loading file in background... Please wait.";
+            btnLoad.Enabled = false; // Disable button during load to prevent double-clicks
+
+            try
+            {
+                // FIXED: Reading file asynchronously keeps the user interface responsive even for 100MB+ files!
+                richTextBoxInput.Text = await File.ReadAllTextAsync(txtFilePath.Text);
+                lblStatus.Text = "Search Status: File successfully loaded.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed to read file: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Search Status: File loading failed.";
+            }
+            finally
+            {
+                btnLoad.Enabled = true; // Re-enable button
+            }
         }
 
-        // 4. Highly optimized relational database query for Princeton WordNet
+        // Highly optimized relational database query for Princeton WordNet
         private List<string> GetSynonymsFromDb(string word)
         {
             List<string> synonyms = new List<string> { word.Trim().ToLower() };
 
-            // Maps user input through WordNet's linked concept directory tables
             string query = @"
                 SELECT DISTINCT w2.lemma 
                 FROM words w1
@@ -79,8 +95,6 @@ namespace KeywordSarchingApp
                             {
                                 string syn = reader["lemma"].ToString().Trim().ToLower();
 
-                                // WordNet stores phrases using underscores (e.g., clever_boy). 
-                                // strip underscores/hyphens to ensure only single standalone words are matched.
                                 if (!string.IsNullOrEmpty(syn) && !syn.Contains(" ") && !syn.Contains("_") && !syn.Contains("-"))
                                 {
                                     if (!synonyms.Contains(syn)) synonyms.Add(syn);
@@ -98,7 +112,7 @@ namespace KeywordSarchingApp
             return synonyms;
         }
 
-        // 5. Fetch Homonyms using your structured local text file mapping
+        // Fetch Homonyms using your structured local text file mapping
         private List<string> GetHomonymsFromDb(string word)
         {
             List<string> homonyms = new List<string> { word.Trim().ToLower() };
@@ -137,7 +151,7 @@ namespace KeywordSarchingApp
             return homonyms;
         }
 
-        // 6. Main Search button logic processing execution blocks cleanly
+        // Main Search button logic processing execution blocks cleanly
         private void btnSearch_Click(object sender, EventArgs e)
         {
             string keyword = txtSearchKeyword.Text.Trim();
@@ -149,10 +163,8 @@ namespace KeywordSarchingApp
                 return;
             }
 
-            // Normalise selection string to absolute lowercase to prevent comparison failures
             string selectedOption = cmbSearchOptions.SelectedItem.ToString().Trim().ToLower();
 
-            // Clear previous user background selections and clean the results DataGridView
             richTextBoxInput.SelectAll();
             richTextBoxInput.SelectionBackColor = richTextBoxInput.BackColor;
             dgvResults.Rows.Clear();
@@ -179,7 +191,6 @@ namespace KeywordSarchingApp
             {
                 List<string> synonymList = GetSynonymsFromDb(keyword);
 
-                // 🚨 SEARCH LOGGER POPUP: Displays what the WordNet database pulled
                 string testLog = string.Join(", ", synonymList);
                 MessageBox.Show($"Search Term: '{keyword}'\nWords fetched from offline WordNet: [{testLog}]",
                                 "WordNet Log", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -194,13 +205,12 @@ namespace KeywordSarchingApp
                 searchPattern = !string.IsNullOrEmpty(combinedWords) ? @"\b(" + combinedWords + @")\b" : @"\b" + Regex.Escape(keyword) + @"\b";
             }
 
-            // Fallback safety layer to handle empty bracket errors safely
             if (string.IsNullOrWhiteSpace(searchPattern) || searchPattern == @"\b()\b")
             {
                 searchPattern = @"\b" + Regex.Escape(keyword) + @"\b";
             }
 
-            // 7. Grid Generation Loop
+            // Grid Generation Loop
             for (int i = 0; i < lines.Length; i++)
             {
                 string currentLine = lines[i].Trim();
@@ -213,7 +223,7 @@ namespace KeywordSarchingApp
                 }
             }
 
-            // 8. Stable Paint Highlighting Loop
+            // Stable Paint Highlighting Loop
             if (matchCount > 0)
             {
                 MatchCollection matches = Regex.Matches(fullText, searchPattern, RegexOptions.IgnoreCase);
@@ -230,25 +240,46 @@ namespace KeywordSarchingApp
             richTextBoxInput.DeselectAll();
 
             lblStatus.Text = matchCount > 0
+
                 ? $"Search Status: Completed! Found in {matchCount} lines."
                 : "Search Status: No matches found.";
         }
 
-        // 9. Clear button logic to completely reset the search keyword and drop down
+        // Scoped Reset: Clear Text area only
+        private void btnClearText_Click(object sender, EventArgs e)
+        {
+            richTextBoxInput.Clear();
+            lblStatus.Text = "Search Status: Text area cleared.";
+        }
+
+        // Scoped Reset: Clear search inputs only
         private void btnClear_Click(object sender, EventArgs e)
         {
             txtSearchKeyword.Clear();
+            if (cmbSearchOptions.Items.Count > 0)
+            {
+                cmbSearchOptions.SelectedIndex = 0;
+            }
+            lblStatus.Text = "Search Status: Search parameters reset.";
+        }
+
+        // Global Reset: Clear everything
+        private void btnClearAll_Click(object sender, EventArgs e)
+        {
+            richTextBoxInput.Clear();
+            txtSearchKeyword.Clear();
+            txtFilePath.Clear();
 
             if (cmbSearchOptions.Items.Count > 0)
             {
                 cmbSearchOptions.SelectedIndex = 0;
             }
 
-            lblStatus.Text = "Search Status: Search parameters reset.";
+            dgvResults.Rows.Clear();
+            lblStatus.Text = "Search Status: Idle. Application fully reset.";
         }
 
-
-        // 10. Export button logic to save the filtered DataGridView rows to a CSV file
+        // Export button logic to save the filtered DataGridView rows to a CSV file
         private void btnExport_Click(object sender, EventArgs e)
         {
             if (dgvResults.Rows.Count == 0)
@@ -268,21 +299,23 @@ namespace KeywordSarchingApp
                 {
                     using (StreamWriter sw = new StreamWriter(saveFileDialog.FileName))
                     {
-                        // Set standard CSV tabular header metrics
                         sw.WriteLine("Line Number,Matched Sentence");
 
                         foreach (DataGridViewRow row in dgvResults.Rows)
                         {
                             if (row.IsNewRow) continue;
 
-                            // Explicitly map cell coordinates to grab keys flawlessly
                             string lineNum = row.Cells[0].Value?.ToString() ?? "";
                             string sentence = row.Cells[1].Value?.ToString() ?? "";
 
-                            // Fixed: Correctly escape literal double quotes for standard compilation rules
-                            if (sentence.Contains(","))
+                            // FIXED: Standard RFC 4180 Compliant CSV escaping rule logic mapping
+                            // Step 1: Always double-escape existing internal quotes first
+                            sentence = sentence.Replace("\"", "\"\"");
+
+                            // Step 2: If line has quotes, commas, or line breaks, wrap the entire field in outer double quotes
+                            if (sentence.Contains(",") || sentence.Contains("\"") || sentence.Contains("\n") || sentence.Contains("\r"))
                             {
-                                sentence = "\"" + sentence.Replace("\"", "\"\"") + "\"";
+                                sentence = "\"" + sentence + "\"";
                             }
 
                             sw.WriteLine($"{lineNum},{sentence}");
@@ -298,30 +331,7 @@ namespace KeywordSarchingApp
             }
         }
 
-        private void btnClearText_Click(object sender, EventArgs e)
-        {
-            richTextBoxInput.Clear();
-            lblStatus.Text = "Search Status: Text area cleared.";
-        }
-
-        private void btnClearAll_Click(object sender, EventArgs e)
-        {
-            
-            richTextBoxInput.Clear();
-            txtSearchKeyword.Clear();
-            txtFilePath.Clear();
-
-            if (cmbSearchOptions.Items.Count > 0)
-            {
-                cmbSearchOptions.SelectedIndex = 0;
-            }
-
-            dgvResults.Rows.Clear();
-
-            lblStatus.Text = "Search Status: Idle. Application fully reset.";
-
-            MessageBox.Show("All fields and results have been successfully cleared!", "Reset Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
+       
     }
 
     // Win32 Message Handle wrapper library extensions to freeze visual control flickering

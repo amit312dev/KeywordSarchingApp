@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Block WordNet Database from accidentally syncing to GitHub due to size limit
+wordnet.db
+*.db
+*.sqlite
+*.sqlite3
