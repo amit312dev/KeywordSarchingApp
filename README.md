@@ -30,8 +30,8 @@ git clone https://github.com
 ```
 
 ### Step 2: Download the Offline WordNet Database
-1. Open this link: [WordNetSQL 3.1 SQLite Folder on SourceForge](https://sourceforge.net)
-2. Download the compressed file named **`sqlite-31.db.zip`** (approx. 15MB).
+1. Click this link to start the download instantly: [Direct Download Link for sqlite-31.db.zip](https://sourceforge.net)
+2. Save the compressed file named **`sqlite-31.db.zip`** (approx. 15MB).
 3. Unzip the file on your computer to get the **`sqlite-31.db`** file (approx. 436MB).
 4. Copy `sqlite-31.db`, paste it inside your project's output folder at **`bin/Debug/`**, and rename it to exactly: **`wordnet.db`**.
 
